@@ -1,0 +1,370 @@
+# UPED: Week 2 ------------------------------------------------------------
+# ---
+# title: Making data matrices: Excel, pivot tables, CSV files, troubleshooting. ‘How dirty is my data?’ Errors and outliers
+# author: Alice Dias Lopes
+# last updated: 13/09/2019
+# credit: Adapted from the book "An introduction to secondary data analysis with IBM SPSS statistics". Sage 2017. John MacInnes.
+# ---
+
+# Packages ----------------------------------------------------------------
+# install.packages("tidyverse") 
+library(dplyr)
+library(tidyr)
+
+# Data --------------------------------------------------------------------
+# 
+# Download the Round 6 of the European Social Survey dataset
+# Link: https://www.europeansocialsurvey.org/data/download.html?r=6
+# Because the isn't a CSV version of the ESS6, we will need to use the package foreig an to open it in R.
+# install.packages("foreign") 
+library(foreign)
+help(package = "foreign") # documentation for the package foreign
+ESS6 <- read.spss("Data/ESS6/ESS6e02_4.sav", to.data.frame=TRUE, use.missings = FALSE) # there are a lot of warning when you open the dataset. 
+warnings() # the warning are for variables that contain date and factor variables with several levels.
+
+
+# Describing the household and its members --------------------------------
+# 
+# We begin to explore the dataset by looking at the questionnaire to see how the data was collected.
+# Check the ESS6 Source Main Questionnaire: https://www.europeansocialsurvey.org/docs/round6/fieldwork/source/ESS6_source_main_questionnaire.pdf
+# Go to Page 38: F1 Including yourself, how many people – including children – live here regularly as members of this household? 
+
+# Check the ESS6 Codebook: https://www.europeansocialsurvey.org/docs/round6/survey/ESS6_appendix_a7_e01_0.pdf
+# How was the question F1 coded? Tip: trying searching "household".
+
+# From the codebook, you will see that:
+# Number of people living regularly as member of household: hhmmb
+# Gender: from gndr (gender of the respondent) to gndr24 (gender of twenty-fourth person in household)
+# Year of birth: from yrbrn (year of birth of the respondent) to yrbrn24 (year of birth of twenty-fourth person in household)
+# Relationship to the respondent: from rshipa2 (relationship with second person in the household) to rshipa2 (relationship of twenty-fourth person in household)
+
+# This information is in a disaggregated form that is of little use (we don't want to know the gender of the 6th person living in the household)
+# However, we can assemble it in whatever way captures features of the household.
+# 
+# Let's start by examining the variable on number of people in the household
+summary(ESS6$hhmmb)
+
+# I am going to create a new data set (ESS6_household) with the variables that were collected fot the household.
+# If you like piping (%>%), you could include this step in your chain of codes.
+
+ESS6_household <- ESS6 %>% 
+  mutate(household = 1:nrow(ESS6)) %>%   # compute a new column (household) from 1:54,673 (We are creating an ID variable for household) %>% 
+  select(household, cntry, hhmmb, inwyys, pdwrk, pdwrkp, contains("gndr"), contains("rship"), contains("yrbrn"))    # selecting the variables for collected for household.
+
+# checking if I kept the right variables
+names(ESS6_household)
+
+# Gender Composition ------------------------------------------------------
+# 
+class(ESS6_household$gndr2) # checking the type of the variable
+summary(ESS6_household$gndr2) # checking how R coded the missing values: "Refusal", "No answer", "Not applicable".
+
+# Number of men in surveyed households (ESS6)
+# In this code, I am using the variable "household" that we created in line 48.
+ESS6_household  %>%
+  select(contains("gndr"), household) %>% 
+  gather(key = "individual", value = "gender", -household) %>% # transforming the data to the long form. 
+  mutate(individual = factor(individual), # defining gender and individual as factors
+         gender = factor(gender)) %>%
+  filter(!is.na(gender)) %>% 
+  group_by(household, .drop = FALSE) %>% # grouping the cases by household/ .drop = FALSE: keep household with 0 males
+  summarise(malehhn = sum(gender == "Male")) %>% # counting the number of males per household
+  {. ->> malehhn} %>% # save an object with the new variable
+  group_by(malehhn, .drop = FALSE) %>% # grouping by males
+  summarize(households = n()) # counting males in households
+
+ESS6_household <- merge(ESS6_household, malehhn, by = "household") # adding the variable for malehhn in the dataset.
+
+# Number of women in surveyed households (ESS6)
+# In this code, I am using the variable "household" that we created in line 48.
+ESS6_household  %>%
+  select(contains("gndr"), household) %>% 
+  gather(key = "individual", value = "gender", -household) %>% # transforming the data to the long form. 
+  mutate(individual = factor(individual), # defining gender and individual as factors
+         gender = factor(gender)) %>%
+  filter(!is.na(gender)) %>% 
+  group_by(household, .drop = FALSE) %>% # grouping the cases by household/ .drop = FALSE: keep household with 0 females
+  summarise(femalehhn = sum(gender == "Female")) %>% # counting the number of females per household
+  {. ->> femalehhn} %>% # save an object with the new variable
+  group_by(femalehhn, .drop = FALSE) %>% # grouping by females
+  summarize(households = n()) # counting females in households
+
+ESS6_household <- merge(ESS6_household, femalehhn, by = "household") # adding the variable for femalehhn in the dataset.
+
+
+# Number of refusal and not answered in surveyed households (ESS6)
+ESS6_household  %>%
+  select(contains("gndr"), household) %>% 
+  gather(key = "individual", value = "gender", -household) %>% # transforming the data to the long form. 
+  mutate(individual = factor(individual), # defining gender and individual as factors
+         gender = factor(gender)) %>%
+  filter(!is.na(gender)) %>% 
+  group_by(household, .drop = FALSE) %>% # grouping the cases by household/ .drop = FALSE: keep household with 0 refusal and not answered
+  summarise(gndrdkr = sum(gender == "Refusal" | gender == "No answer")) %>% # counting the number of refusal and not answered per household
+  {. ->> gndrdkr} %>% # save an object with the new variable
+  group_by(gndrdkr, .drop = FALSE) %>% # grouping by gndrdkr
+  summarize(households = n()) # counting gndrdkr in households (404 households that we don't have information about gender)
+
+ESS6_household <- merge(ESS6_household, gndrdkr, by = "household") # adding the variable for gndrdkr in the dataset.
+
+# New varaible summing the three variables created above
+totalhhn <- ESS6_household$malehhn + ESS6_household$femalehhn + ESS6_household$gndrdkr
+
+# comparing the new variable with the variable for number of people in the household (hhmmb).
+table (totalhhn, ESS6_household$hhmmb)
+# you will see that the new variable and hhmmb give similar results but not identical. We will examine some of the discrepancies later on.
+
+# Year of Birth Composition ------------------------------------------------------
+#
+# selecting the variable we will use to analyse year composition
+year <-  select(ESS6_household, household, inwyys, contains("yrbrn")) 
+
+# the variables for years (inwyys and yrbrn to yrbrn24) are recorded as factors.
+class(year$inwyys)
+summary(year$inwyys)
+
+# the recommended way to convert factors where the levels appear as numbers to a numeric vector is:
+year$inwyys <- as.numeric(as.character(year$inwyys))
+class(year$inwyys)
+summary(year$inwyys)
+
+# lapply: apply a function to the whole dataframe
+year <- lapply(year, function(x) as.numeric(as.character(x))) # tranforming all the variable for year in numeric. However, the lapply command will 
+# transform the dataframe to list
+year <- as.data.frame(do.call(cbind, year)) # transforming the list to data frame.
+summary(year$yrbrn2)
+
+# calculating the age during the interview for each member in the household.
+year <- cbind(year, year[,2] - year[,3:26]) # subtract first column (year[,1]) by the other columns in the dataframe, except the first column (year[,-1])
+names(year) # names in the data frame. You will see that the new variables have the same names that the variables they were calculated from.
+colnames(year) [27:50]  <- paste("age", 1:24, sep = "") # changing the names of the variables from columns 26:49.
+names(year) # checking if the new data frame is correct.
+head(year)
+
+names(ESS6_household) # just want to check the variables for the ESS6_household. I don't want to keep the variables for year born from the ESS6_household (still as factor) 
+
+# saving the new data set with variables for age
+ESS6_household <- merge(ESS6_household[,c(1:53)], year[,c(1:50)], by = "household")
+names(ESS6_household)
+
+# calculating the youngest member of the household
+ESS6_household %>%
+  select(contains("age"), household) %>%
+  gather(key = "individual", value = "age", -household) %>% 
+  mutate(individual = factor(individual), 
+         age = as.numeric(age)) %>%
+  filter(!is.na(age)) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(youngest=min(age)) %>% 
+  {. ->> youngest} %>% 
+  group_by(youngest, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+ESS6_household <- merge(ESS6_household, youngest, by = "household") # adding the variable for youngest member in the household in the dataset.
+summary(ESS6_household$youngest)
+
+# Calculate the number of infants in hh (age 0 to 4)
+ESS6_household %>%
+  select(contains("age"), household) %>%
+  gather(key = "individual", value = "age", -household) %>% 
+  mutate(individual = factor(individual), 
+         age = as.numeric(age)) %>%
+  filter(!is.na(age) | age >= 0 & age <=4) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(infanthhn=sum(age >= 0 & age <=4)) %>% 
+  {. ->> infanthhn} %>% 
+  group_by(infanthhn, .drop = FALSE) %>% 
+  summarize(households = n()) # the result is slightly different from MacInnes, 2017. In the book, the missing values were coded as 0.
+                          
+
+ESS6_household <- merge(ESS6_household, infanthhn, by = "household", all = TRUE) # we want to keep the missing value, hence all = TRUE.
+summary(ESS6_household$infanthhn) 
+
+# Exercise ------------------------------------------------------------------
+## (1) Calculate the number of children in hh (age 5 to 14): childhhn
+## (2) Calculate the number of adults in hh (15 to 64): wagehhn
+## (3) Calculate the number of adults 65+ in hh (65 to highest): oldhhn
+# Answers ------------------------------------------------------------------
+#(1)
+ESS6_household %>%
+  select(contains("age"), household) %>%
+  gather(key = "individual", value = "age", -household) %>% 
+  mutate(individual = factor(individual), 
+         age = as.numeric(age)) %>%
+  filter(age >= 5 & age <=14) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(childhhn=sum(age >= 5 & age <=14)) %>% 
+  {. ->> childhhn} %>% 
+  group_by(childhhn, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+ESS6_household <- merge(ESS6_household, childhhn, by = "household", all = TRUE) 
+summary(ESS6_household$childhhn)
+
+#(2)
+ESS6_household %>%
+  select(contains("age"), household) %>%
+  gather(key = "individual", value = "age", -household) %>% 
+  mutate(individual = factor(individual), 
+         age = as.numeric(age)) %>%
+  filter(!is.na(age) | age >= 15 & age <=64) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(wagehhn=sum(age >= 15 & age <=64)) %>% 
+  {. ->> wagehhn} %>% 
+  group_by(wagehhn, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+#(3)
+ESS6_household %>%
+  select(contains("age"), household) %>%
+  gather(key = "individual", value = "age", -household) %>% 
+  mutate(individual = factor(individual), 
+         age = as.numeric(age)) %>%
+  filter(!is.na(age) | age >= 65) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(wagehhn=sum(age >= 65)) %>% 
+  {. ->> oldhhn} %>% 
+  group_by(oldhhn, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+# Relationship Composition ------------------------------------------------------
+#
+## Number of respondents living with partners
+ESS6_household %>%
+  select(contains("rshipa"), household) %>%
+  gather(key = "individual", value = "relationship", -household) %>% 
+  mutate(individual = factor(individual), 
+         relationship = factor(relationship)) %>%
+  filter(!is.na(relationship)) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(partners=sum(relationship == "Husband/wife/partner")) %>% 
+  {. ->> partners} %>% 
+  group_by(partners, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+ESS6_household <- merge(ESS6_household, partners, by = "household", all = TRUE)
+
+# A very small number of households where the data records more than one partner. These cases might be data entry errors.
+# Let's first create a variable describing the partner's age. 
+# 
+ESS6_household$partdob <- NA
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa2 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa2), ESS6_household$yrbrn2, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa3 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa3), ESS6_household$yrbrn3, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa4 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa4), ESS6_household$yrbrn4, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa5 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa5), ESS6_household$yrbrn5, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa6 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa6), ESS6_household$yrbrn6, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa7 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa7), ESS6_household$yrbrn7, ESS6_household$partdob)
+ESS6_household$partdob <- ifelse(ESS6_household$rshipa8 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa8), ESS6_household$yrbrn8, ESS6_household$partdob)
+ESS6_household$partdob <- if_else(ESS6_household$rshipa9 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa9), ESS6_household$yrbrn9, ESS6_household$partdob)
+summary(ESS6_household$partdob)
+
+# calculate the age difference between respondents and partners and look its distribution
+
+ESS6_household$agediff <- ESS6_household$yrbrn - ESS6_household$partdob
+summary(ESS6_household$agediff)
+
+# Let's select now only respondents that reported more than one partner and select some variables of interest.
+ESS6_household %>%
+  filter(partners >= 2) %>% 
+  select(cntry, household, yrbrn, gndr, hhmmb, partdob, agediff, yrbrn2, yrbrn3, yrbrn4, yrbrn5, yrbrn6,
+         rshipa2, rshipa3, rshipa4, rshipa5, rshipa6, gndr2, gndr3, gndr4, gndr5, gndr6) -> partners_data
+# Save the data set as a CSV file.
+write.csv(partners_data, "Data/partners_data.csv")
+
+## Exercise --------
+# (1) Calcute the number of respondents living with offspring
+# (2) Calculate the number of respondents living with parents
+# (3) Calculate the number of respondents living with siblings
+# (4) Create a variable describing the partner's gender. 
+# Answer ------------------------------------------------------------------
+# (1)
+ESS6_household %>%
+  select(contains("rshipa"), household) %>%
+  gather(key = "individual", value = "relationship", -household) %>% 
+  mutate(individual = factor(individual), 
+         relationship = factor(relationship)) %>%
+  filter(!is.na(relationship)) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(offspring=sum(relationship == "Son/daughter/step/adopted/foster")) %>% 
+  {. ->> offspring} %>% 
+  group_by(offspring, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+ESS6_household <- merge(ESS6_household, offspring, by = "household", all = TRUE)
+
+#(2)
+ESS6_household %>%
+  select(contains("rshipa"), household) %>%
+  gather(key = "individual", value = "relationship", -household) %>% 
+  mutate(individual = factor(individual), 
+         relationship = factor(relationship)) %>%
+  filter(!is.na(relationship)) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(parents=sum(relationship == "Parent/parent-in-law")) %>% 
+  {. ->> parents} %>% 
+  group_by(parents, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+#(3)
+ESS6_household %>%
+  select(contains("rshipa"), household) %>%
+  gather(key = "individual", value = "relationship", -household) %>% 
+  mutate(individual = factor(individual), 
+         relationship = factor(relationship)) %>%
+  filter(!is.na(relationship)) %>% 
+  group_by(household, .drop = FALSE) %>% 
+  summarise(sibs=sum(relationship == "Brother/sister/step/adopted/foster")) %>% 
+  {. ->> sibs} %>% 
+  group_by(sibs, .drop = FALSE) %>% 
+  summarize(households = n()) 
+
+# (4)
+ESS6_household$pgndr <- NA
+ESS6_household$pgndr <- as.factor(ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa2 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa2), ESS6_household$gndr2, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa3 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa3), ESS6_household$gndr3, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa4 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa4), ESS6_household$gndr4, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa5 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa5), ESS6_household$gndr5, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa6 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa6), ESS6_household$gndr6, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa7 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa7), ESS6_household$gndr7, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa8 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa8), ESS6_household$gndr8, ESS6_household$pgndr)
+ESS6_household$pgndr <- if_else(ESS6_household$rshipa9 == "Husband/wife/partner" & !is.na(ESS6_household$rshipa9), ESS6_household$gndr9, ESS6_household$pgndr)
+summary(ESS6_household$pgndr)
+
+# Working Parents ------------------------------------------------------
+# You will need to save the variables for partners, offspring, childhhn and infanthhn
+summary(ESS6_household$partners)
+summary(ESS6_household$offspring)
+summary(ESS6_household$childhhn)
+summary(ESS6_household$infanthhn)
+
+# First we need to identify households with a couple with a child (0-14) where one the members of the couple is a respondent.
+# We can do this by selecting households where offspring, partners and either childhhn or infanthhn each take a value 1 or greater.
+# We will create a variable to flag this cases.
+
+ESS6_household$flag <- 0
+ESS6_household$flag [ESS6_household$childhhn >= 1 & ESS6_household$partners >= 1 & ESS6_household$offspring >= 1] <- 1
+ESS6_household$flag [ESS6_household$infanthhn >= 1 & ESS6_household$partners >= 1 & ESS6_household$offspring >= 1] <- 1
+summary(ESS6_household$flag)
+
+# We can use the variables pdwrk and pdwkp to identify cases where the respondet and partner are working.
+summary(ESS6_household$pdwrk)
+summary(ESS6_household$pdwrkp)
+
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$pdwrk == "Marked" & ESS6_household$pdwrkp == "Marked"] <- 1 # both work
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$gndr == "Male" & ESS6_household$pdwrk == "Marked" & ESS6_household$pdwrkp == "Not marked"] <- 2 # man works
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$gndr == "Female" & ESS6_household$pdwrk == "Not marked" & ESS6_household$pdwrkp == "Marked"] <- 2 # man works
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$gndr == "Female" & ESS6_household$pdwrk == "Marked" & ESS6_household$pdwrkp == "Not marked"] <- 3 # woman works
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$gndr == "Male" & ESS6_household$pdwrk == "Not marked" & ESS6_household$pdwrkp == "Marked"] <- 3 # woman works
+ESS6_household$dualearn[ESS6_household$flag == 1 & ESS6_household$pdwrk == "Not marked" & ESS6_household$pdwrkp == "Not marked"] <- 4 # neither works
+table(ESS6_household$dualearn)
+
+## Extra Exercise --------
+# Calculate the number of households with same sex partners.
+ESS6_household$psmsex <- 0
+ESS6_household$psmsex [ESS6_household$gndr == "Male" & ESS6_household$pgndr == "Male"] <- 1
+ESS6_household$psmsex [ESS6_household$gndr == "Female" & ESS6_household$pgndr == "Female"] <- 1
+ESS6_household$psmsex [ESS6_household$gndr == "Male" & ESS6_household$pgndr == "Female"] <- 0
+ESS6_household$psmsex [ESS6_household$gndr == "Female" & ESS6_household$pgndr == "Male"] <- 0
+summary(ESS6_household$psmsex)
+table(ESS6_household$psmsex)

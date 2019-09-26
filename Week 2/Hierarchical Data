@@ -368,3 +368,4 @@ ESS6_household$psmsex [ESS6_household$gndr == "Male" & ESS6_household$pgndr == "
 ESS6_household$psmsex [ESS6_household$gndr == "Female" & ESS6_household$pgndr == "Male"] <- 0
 summary(ESS6_household$psmsex)
 table(ESS6_household$psmsex)
+

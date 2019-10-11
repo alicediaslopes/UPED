@@ -1,0 +1,111 @@
+# UPED: Week 4 ------------------------------------------------------------
+# ---
+# title: Recoding, combining, and merging variables
+# author: Alice Dias Lopes
+# last updated: 10/10/2019
+# credit: Adapted from the book "An introduction to secondary data analysis with IBM SPSS statistics". Sage 2017. John MacInnes.
+# ---
+
+# Packages ----------------------------------------------------------------
+# install.packages("tidyverse") 
+library(dplyr)
+library(tidyr)
+
+# Data --------------------------------------------------------------------
+# 
+# Download the Round 6 of the European Social Survey dataset
+# Link: https://www.europeansociasurvey.org/data/download.html?r=6
+# Because the isn't a CSV version of the ESS6, we will need to use the package foreig an to open it in R.
+# install.packages("foreign") 
+library(foreign)
+help(package = "foreign") # documentation for the package foreign
+ESS6 <- read.spss("Week 4/Data/ESS6/ESS6e02_4.sav", to.data.frame=TRUE, use.missings = FALSE) # there are a lot of warning when you open the dataset. 
+warnings() # the warning are for variables that contain date and factor variables with several levels.
+
+# Weights --------------------------------------------------------------------
+# For more on weights in R: https://www.r-bloggers.com/social-science-goes-r-weighted-survey-data/
+#install.packages("survey")
+library(survey) # we will use the package survey to deal with weights, but there are more options available in R.
+
+# Weights available in the ESS:
+# pweight: different probabilities of selection by country population sizes.
+# dweight: different probabilities of selection of different kind of respondent within each country.
+# pspwght: uses census or other information to match the achieved sample to known information about the target population.
+
+# For this exercise, we will use mainly the pweight.
+ESS6_w <- svydesign(ids = ~1, data = ESS6, weights = ESS6$pweight)
+
+# Recoding Variables  --------------------------------------------------------------------
+
+# Let's explore respondent attitudes towards homosexuality: 
+# The variable freehms describes respondents' attitudes towards homosexuality by asking how far they (dis) 
+# agree with the statement 'Gays and lesbians should be free to live life as they wish.'
+
+# Let's run a frequency table for freehms.
+round(100*prop.table(svytable(~freehms, design = ESS6_w)),2)
+
+# What other variables you think might affect individuals' attitudes towards homosexuality?
+# Let explore ...
+
+# Relationship between freehms and categorical variables.
+# gndr: gender
+round(100*prop.table(svytable(~freehms + gndr, design = ESS6_w),2),2)
+# rlgblg: belonging to particular religion or denomination
+round(100*prop.table(svytable(~freehms + rlgblg, design = ESS6_w),2),2)
+# rlgdnm: religion or denomination belonging to at present
+round(100*prop.table(svytable(~freehms + rlgdnm, design = ESS6_w),2),2)
+# lrscale: placement on left right scale
+round(100*prop.table(svytable(~freehms + lrscale, design = ESS6_w),2),2)
+
+# Relationship between interval variables.
+
+
+# We can reduce the freehms variable into two categories: all those who strongly agree and agree, and all those who strongly disagree and disagree. We would treat those 
+# who neither agree or disagree as missing. 
+
+ESS6$freehms2[ESS6$freehms =='Agree strongly' | ESS6$freehms == 'Agree'] <- 1 
+ESS6$freehms2[ESS6$freehms =='Disagree strongly' | ESS6$freehms == "Disagree"] <- 2
+ESS6$freehms2[ESS6$freehms =='Neither agree nor disagree' | ESS6$freehms == "Refusal" |
+                ESS6$freehms == "Don't know" | ESS6$freehms == " No answer"] <- 3
+
+# It is always good to check if everything has gone correctly. You can do a crosstab between the old and new variable.
+table(ESS6$freehms, ESS6$freehms2)
+
+# Subsetting and selecting cases  --------------------------------------------------------------------
+
+# Let's explore gender differences in home activities and labour market outcomes.
+# It makes sense to compare men and women in a similar stage in life: completed education and working. Let's look at men and women aged 25-49.
+
+# First you need to create a variable selecting the individuals we are interested in.
+class(ESS6$agea)
+ESS6$agea<- as.numeric(as.character(ESS6$agea))
+
+ESS6_filter<- ESS6[ which(ESS6$agea >= 25 & ESS6$agea <= 49), ]
+
+# Adding the weight to the new dataset.
+ESS6_w2 <- svydesign(ids = ~1, data = ESS6_filter, weights = ESS6_filter$pweight)
+
+# The mnactic variable records what the main activity of respondents was in the week before their interview. 
+round(100*prop.table(svytable(~mnactic, design = ESS6_w2)),2)
+
+# Our focus is in whether women are active in the labour market. We will recode the variable:
+# Paid work (1) + Unemployed, looking for job (3): 1
+# Education (2) + Unemployed, not looking for job (4) + Permanently sick or disabled (5) + Retired (6) + Community or military service (7) + Other (9): 2
+# Housework, looking after children, others (8): 3
+
+ESS6_filter$mbw[ESS6_filter$mnactic =='Paid work' | ESS6_filter$mnactic == "Unemployed, looking for job"] <- 1 
+ESS6_filter$mbw[ESS6_filter$mnactic =='Education' | ESS6_filter$mnactic == "Unemployed, not looking for job" |
+           ESS6_filter$mnactic == "Permanently sick or disabled" | ESS6_filter$mnactic == "Retired" |
+           ESS6_filter$mnactic == "Community or military service" | ESS6_filter$mnactic == "Other" ] <- 2 
+ESS6_filter$mbw[ESS6_filter$mnactic =='Housework, looking after children, others'] <- 3
+
+# checking recoding
+table(ESS6_filter$mbw, ESS6_filter$mnactic)
+
+# Because we are going to compare individuals countries, rather than all countries together, we will change our weight to pspwght.
+ESS6_w3 <- svydesign(ids = ~1, data = ESS6_filter, weights = ESS6_filter$pspwght)
+
+# three-way contingency table
+economic_activity <- round(100*prop.table(svytable(~mbw + gndr + cntry, design = ESS6_w3),c(2,3)),2)
+# save the table as a csv file (you will need to edit the table using pivot tables or you can try to use tidyr and dplyr package to create this table)
+write.csv(economic_activity, "Week 4/Data/economic_activity_table.csv")

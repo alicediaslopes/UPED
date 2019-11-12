@@ -1,0 +1,272 @@
+# UPED: Week 9 ------------------------------------------------------------
+# ---
+# title: Graphics and visualisation
+# author: Alice Dias Lopes
+# last updated: 12/11/2019
+# credit: Adapted from R Workshop: https://github.com/alicediaslopes/R-Workshop.
+# ---
+
+#########################################################################################
+#                                Gapminder Data                                         #      
+#########################################################################################
+# install gapminder
+# install.packages("gapminder")
+library(gapminder)
+# package documentation: https://cran.r-project.org/web/packages/gapminder/gapminder.pdf
+
+#The main data frame gapminder has 1704 rows and 6 variables:
+# (1) country factor with 142 levels
+# (2) continent factor with 5 levels
+# (3) year ranges from 1952 to 2007 in increments of 5 years
+# (4) lifeExp life expectancy at birth, in years
+# (5) pop population
+# (6) gdpPercap GDP per capita (US$, inflation-adjusted)
+# obs: country_colors for a nice color scheme for the countries
+ 
+
+# Let's explore the dataset 
+
+str(gapminder) # structure of the data
+head(gapminder) # first six cases of the data
+summary(gapminder) # summary statistics of the variables in the dataset
+table(gapminder$continent) # table for continents in the dataset
+
+# Question: Who is this dataset organised? Is it long or wide?
+# 
+# Let's create a dataset for observations in 2007
+gapminder2007 <- gapminder[ which(gapminder$year== 2007), ]
+
+#########################################################################################
+#                                    Ggplot2                                            #      
+#########################################################################################
+# We start by loading the required package.
+# install.packages("ggplot2") # You only have to run it once
+library(ggplot2)
+
+# Building plots with **`ggplot2`** is typically an iterative process. 
+# We start by defining the dataset we'll use:
+ggplot(data = gapminder2007)
+
+# lay out the axis(es), for example we can set up the axis for the Comments count ('comments_count_fb'):
+ggplot(data = gapminder2007, aes(x = gdpPercap)) 
+
+# and finally choose a geom
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram()
+
+# We could change the binwidth by adding arguments
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram(bins = 10) 
+
+# We could add a line showing the mean value by adding a geom
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram(bins = 10) +
+  geom_vline(xintercept=mean(gapminder2007$gdpPercap), color = "red", linetype = "dashed")
+
+# We could change color by adding arguments (fill means color of the filling in ggplot2)
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram(bins = 10, fill = "red")
+
+# How about making it transparent?
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram(bins = 10, fill = "red", alpha = 0.5)
+
+# Instead of colouring everything with the same colour, we could colour them by type 
+# since we are using a variable in the dataframe, we have to put it inside aes()
+ggplot(data = gapminder2007, aes(x = gdpPercap, fill = continent)) +
+  geom_histogram(bins = 10, alpha = 0.5)
+
+# Remember aesthetic mappings can also be set in individual layers
+# In this case the 'fill' will only apply to geom_histogram (even if there are more geoms)
+ggplot(data = gapminder2007, aes(x = gdpPercap)) +
+  geom_histogram(aes(fill = continent), bins = 10, alpha = 0.5)
+
+####################################################################################
+## Visualising two continuous variables                                           ##
+####################################################################################
+# Creating a plot for two continuous variables (let's include life expentancy to the Y-axis)
+ggplot(data = gapminder, aes(x = gdpPercap, y = lifeExp)) 
+
+# because we are dealing with a long data, I will select only information for 2007.
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp)) 
+
+# We could use geom_point() for scatter plot
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp)) +
+  geom_point() # Question: What is the problem with this graph?
+
+# We can transform a variable in the aes
+ggplot(filter(gapminder, year == 2007), aes(x = log10(gdpPercap), y = lifeExp)) +
+  geom_point()
+
+# We can easily fit a regression line
+ggplot(filter(gapminder, year == 2007), aes(x = log10(gdpPercap), y = lifeExp)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+# Again, you can add the mean values 
+ggplot(filter(gapminder, year == 2007), aes(x = log10(gdpPercap), y = lifeExp)) +
+  geom_point() +
+  geom_vline(xintercept = mean(log10(gapminder$gdpPercap))) +
+  geom_hline(yintercept = mean (gapminder$lifeExp), colour = "red", linetype = "dotted")
+
+# We can colour by a variable in the aes
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent)) +
+  geom_point()
+
+# We create different size of point by a variable in the aes
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point() 
+
+# We can scale the point size to a range in another layer
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point() +
+  scale_size_continuous(range = c(1, 20)) 
+
+# Add labels and legend
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") 
+
+# And change the theme of the graph & format the legend
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + # excluding the legend for size of the point
+  theme(legend.title = element_blank()) + # excluding the tile of the legend
+  theme_bw() # you can see the themes available on ggplot2 below
+
+#########################################################################################
+# Animating the graph!
+#########################################################################################
+#install.packages("gganimate")
+#install.packages("gifski")
+#install.packages("png")
+library(gganimate)
+library(gifski)
+library(png)
+
+# You will need only to include a line in your code for the transition of time
+
+ggplot(gapminder, aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop, frame = year)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart by Year: {frame_time}",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) + 
+  theme_bw() +
+  transition_time(year) 
+
+anim_save("beautiful", animation = last_animation(), path = NULL)
+# beautiful is the file name.
+
+#########################################################################################
+# For fun: BBC style!
+#########################################################################################
+
+install.packages('devtools')
+devtools::install_github('bbc/bbplot')
+library(bbplot)
+library(tidyverse)
+
+# you just add one command to format your graph in the BBC style
+
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) +
+  bbc_style()
+
+
+######################################################################################### 
+# Making the graph loook pretty!
+######################################################################################### 
+# Colours
+######################################################################################### 
+# Hexadecimal colour codes (https://htmlcolorcodes.com/)
+ggplot(gapminder, aes(x = continent)) +
+  geom_bar(colour="black", fill = "#66CC99")
+
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) + 
+  theme_bw() +
+  scale_colour_manual(values=c("#76448A", "#A93226", "#16A085", "#F1C40F", "#2C3E50"))
+
+# Wes Anderson Pallete
+# install.packages("wesanderson")
+library(wesanderson)
+names(wes_palettes)
+
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) +
+  theme_bw() +
+  scale_colour_manual(values=wes_palette("Royal2"))
+
+# More on colour: http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
+#########################################################################################
+# Themes
+######################################################################################### 
+# Black and White theme
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) +
+  theme_bw() 
+
+# Classic theme
+ggplot(filter(gapminder, year == 2007), aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.6) + # add some transperancy to the points
+  scale_size_continuous(range = c(1, 20)) +
+  labs(x = "Income (GDP per capita)", y = "Health (Life Expectancy)",
+       title = "World Health Chart",
+       subtitle = "Gapminder 2007",
+       caption = "Source: Gapminder.org") +
+  guides(size = FALSE) + 
+  theme(legend.title = element_blank()) +
+  theme_classic()
+
+# All the available themes in ggplot2: https://ggplot2.tidyverse.org/reference/ggtheme.html
+
+#########################################################################################
+# Saving the graph (check the slide to see how the command works).
+#########################################################################################
+# ggsave save the last plot
+ggsave("graph.jpg")
+# another way to save your plot
+pdf("graph.pdf", width=5, height=5)
+name_graph # or the code for the graph
+dev.off()
